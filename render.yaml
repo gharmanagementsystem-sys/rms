@@ -114,20 +114,25 @@ services:
       - key: LOG_LEVEL
         value: info
 
-# ---------------------------------------------------------------------------
-# Scheduled jobs
-#
-# ⚠️ SCHEDULES ARE UTC. Render cron does not accept a timezone, and Nepal is
-# UTC+05:45 — a 45-minute offset, so these are NOT whole-hour conversions.
-# docs/jobs.md states the intended local (NPT) times; each entry below shows
-# the arithmetic. Getting this wrong sends rent reminders in the afternoon.
-#
-# Every job is independently idempotent (docs/jobs.md), so a retry, an overlap
-# or a double fire cannot double-bill or double-notify.
-# ---------------------------------------------------------------------------
-crons:
+  # ---------------------------------------------------------------------------
+  # Scheduled jobs
+  #
+  # ⚠️ SCHEDULES ARE UTC. Render cron does not accept a timezone, and Nepal is
+  # UTC+05:45 — a 45-minute offset, so these are NOT whole-hour conversions.
+  # docs/jobs.md states the intended local (NPT) times; each entry below shows
+  # the arithmetic. Getting this wrong sends rent reminders in the afternoon.
+  #
+  # Every job is independently idempotent (docs/jobs.md), so a retry, an overlap
+  # or a double fire cannot double-bill or double-notify.
+  #
+  # NOTE: these are entries in the SAME top-level `services:` list as the web
+  # service above — Render's blueprint schema has no top-level `crons:` key, and
+  # a scheduled job is just a service with `type: cron`.
+  # ---------------------------------------------------------------------------
+
   # 00:15 NPT − 5:45 → 18:30 UTC the previous day
-  - name: rms-generate-periods
+  - type: cron
+    name: rms-generate-periods
     runtime: node
     plan: starter
     region: singapore
@@ -152,7 +157,8 @@ crons:
 
   # 08:00 NPT − 5:45 → 02:15 UTC. Deliberately not midnight: a push at 3 a.m.
   # is how an app gets uninstalled.
-  - name: rms-rent-reminders
+  - type: cron
+    name: rms-rent-reminders
     runtime: node
     plan: starter
     region: singapore
@@ -166,7 +172,8 @@ crons:
     envVars: *jobEnv
 
   # Every 5 minutes — timezone-independent. Drains the push queue.
-  - name: rms-dispatch-push
+  - type: cron
+    name: rms-dispatch-push
     runtime: node
     plan: starter
     region: singapore
@@ -181,7 +188,8 @@ crons:
 
   # Sunday 03:00 NPT − 5:45 → Saturday 21:15 UTC. Note the day shifts too:
   # weekday 0 (Sunday) becomes 6 (Saturday).
-  - name: rms-prune-devices
+  - type: cron
+    name: rms-prune-devices
     runtime: node
     plan: starter
     region: singapore
