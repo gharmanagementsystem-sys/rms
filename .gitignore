@@ -1,0 +1,72 @@
+# ---------------------------------------------------------------------------
+# Secrets — MUST stay first. An empty .env already exists at the repo root.
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+google-services.json
+GoogleService-Info.plist
+firebase-service-account*.json
+# Firebase downloads service-account keys as <project>-firebase-adminsdk-<id>.json,
+# which the pattern above does not match. This one does.
+*-firebase-adminsdk-*.json
+
+# Rendered email previews (npm run email:preview) — scratch output.
+apps/api/email-preview-*.html
+*serviceAccountKey*.json
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Prisma Client is generated from prisma/schema.prisma by `prisma generate`
+# (wired to postinstall), so it is a build artifact, not source.
+apps/api/generated/
+
+# Expo
+.expo/
+.expo-shared/
+apps/mobile/android/
+apps/mobile/ios/
+*.jks
+*.p8
+*.p12
+*.mobileprovision
+*.orig.*
+
+# Native/EAS
+.easignore
+
+# Testing
+coverage/
+.nyc_output/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+
+# Editors / OS
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Caches
+.cache/
+.turbo/
+.eslintcache
+.metro-health-check*

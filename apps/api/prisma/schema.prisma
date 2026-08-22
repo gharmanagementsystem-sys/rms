@@ -1,0 +1,903 @@
+// Rent Management Nepal — Prisma schema
+//
+// Conventions every model in this file must follow. These encode product
+// decisions from CLAUDE.md and are not stylistic preferences.
+//
+//  Money      Integer paisa, never floating point (§3.2). Use `BigInt`.
+//             NPR 15,000 is stored as 1500000.
+//             NOTE: Prisma maps `BigInt` to JavaScript `bigint`, and
+//             JSON.stringify throws on bigint. Convert to `number` at the
+//             API response boundary — paisa values are far below 2^53, so
+//             the conversion is lossless.
+//
+//  Business   Period start/end, due dates and payment dates are calendar
+//  dates      dates in Nepal Standard Time. Use `DateTime @db.Date` so no
+//             time component or timezone conversion is involved. NPT is
+//             UTC+05:45, and an implicit conversion would shift a period
+//             boundary by a day (§46).
+//
+//  Instants   Created/updated/sent timestamps are true instants. Use
+//             `DateTime @db.Timestamptz(6)`.
+//
+//  Ids        `String @id @default(uuid(7))`. UUIDv7 is time-ordered, which
+//             keeps index locality good without exposing a sequential count.
+//
+//  Periods    Rental periods are fixed-duration: MONTHLY is exactly 30 days
+//             and YEARLY exactly 365 days, with explicit inclusive start and
+//             end columns. No calendar-month arithmetic (§13, ADR 0001).
+//
+// Domain models (profiles, properties, units, rentals, periods, payments) are
+// added by the schema step. The models below are the authentication tables.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+// Prisma 7 removed `url` from the datasource block. The migration CLI reads the
+// connection string from prisma.config.ts, and the runtime client receives it
+// through a driver adapter (see src/db/client.ts).
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Authentication (Better Auth)
+//
+// These four models are owned by Better Auth. Their FIELD names must match what
+// the library expects exactly — the Prisma adapter queries by Prisma field name
+// — so do not rename them. Only the SQL column/table names are remapped, via
+// @map/@@map, to keep the database snake_case and consistent with the domain
+// tables listed in CLAUDE.md §33.
+//
+// `user` is a reserved word in SQL, which is a second reason the tables are
+// mapped to plural names.
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String   @id @default(uuid(7))
+  name          String
+  email         String   @unique
+  emailVerified Boolean  @default(false) @map("email_verified")
+  image         String?
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  sessions Session[]
+  accounts Account[]
+
+  profile     Profile?
+  preferences UserPreferences?
+  properties  Property[]
+
+  ownedRentals   Rental[] @relation("RentalOwner")
+  rentedRentals  Rental[] @relation("RentalRenter")
+  createdRentals Rental[] @relation("RentalCreator")
+
+  devices       Device[]
+  notifications Notification[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(uuid(7))
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  token     String   @unique
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Sessions are database-backed so a sign-out revokes access immediately.
+  // Indexed by user so "sign out everywhere" stays cheap.
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Account {
+  id         String @id @default(uuid(7))
+  accountId  String @map("account_id")
+  providerId String @map("provider_id")
+
+  /// Better Auth password hash for the credential provider. NEVER select this
+  /// into an API response and never log it (CLAUDE.md §32).
+  password String?
+
+  /// OAuth tokens. Sensitive — redacted by the logger, never returned.
+  accessToken           String?   @map("access_token")
+  refreshToken          String?   @map("refresh_token")
+  idToken               String?   @map("id_token")
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at") @db.Timestamptz(6)
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at") @db.Timestamptz(6)
+  scope                 String?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  // Lookup path for social sign-in. Deliberately an index rather than a unique
+  // constraint, to avoid diverging from what the library assumes.
+  @@index([providerId, accountId])
+  @@map("accounts")
+}
+
+model Verification {
+  id         String   @id @default(uuid(7))
+  identifier String
+  value      String
+  expiresAt  DateTime @map("expires_at") @db.Timestamptz(6)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([identifier])
+  @@map("verifications")
+}
+
+/// Better Auth rate-limit counters.
+///
+/// Stored in the database rather than in process memory so limits survive a
+/// restart and are shared across instances. With in-memory storage, a deploy
+/// resets every counter and N instances multiply the effective limit by N —
+/// which is exactly when brute-force protection matters most.
+model RateLimit {
+  id          String @id @default(uuid(7))
+  key         String @unique
+  count       Int
+  lastRequest BigInt @map("last_request")
+
+  @@map("rate_limits")
+}
+
+/// Security audit trail (CLAUDE.md §56).
+///
+/// Deliberately holds NO personal data — no email, no name. Only an opaque
+/// user id, which becomes meaningless once the user row is deleted. That keeps
+/// the trail useful for investigating account abuse without turning it into a
+/// second copy of the user table that survives deletion requests.
+///
+/// `userId` is intentionally not a foreign key: the trail must outlive the
+/// account it describes, so "this account was deleted" remains auditable.
+model AuthAuditLog {
+  id        String   @id @default(uuid(7))
+  event     String
+  userId    String?  @map("user_id")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([userId, createdAt])
+  @@index([event, createdAt])
+  @@map("auth_audit_logs")
+}
+
+/// Audit trail for financially meaningful domain actions (CLAUDE.md §56).
+///
+/// Records rental and property lifecycle changes — not every UI event. `before`
+/// and `after` hold only the fields that changed, so the trail stays readable
+/// and does not become a second copy of the row.
+///
+/// `actorUserId` is not a foreign key: the record must outlive the account that
+/// performed the action, or "who ended this rental?" becomes unanswerable.
+model AuditLog {
+  id          String  @id @default(uuid(7))
+  actorUserId String? @map("actor_user_id")
+  action      String
+  entityType  String  @map("entity_type")
+  entityId    String  @map("entity_id")
+  before      Json?
+  after       Json?
+  /// Correlates with the request id in the structured logs.
+  requestId   String? @map("request_id")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([entityType, entityId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Domain enums
+//
+// Every value here is mirrored in packages/shared/src/domain.ts. A parity test
+// fails if the two drift, because the API contract and the database would then
+// disagree about what a valid value is.
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  HOUSE_OWNER
+  RENTER
+
+  @@map("user_role")
+}
+
+enum DiscoverySource {
+  FRIEND_OR_FAMILY
+  SOCIAL_MEDIA
+  SEARCH_ENGINE
+  APP_STORE
+  ADVERTISEMENT
+  OTHER
+
+  @@map("discovery_source")
+}
+
+enum UnitType {
+  FLAT
+  ROOM
+  SHOP
+  HOUSE
+
+  @@map("unit_type")
+}
+
+/// Note the deliberate absence of OCCUPIED — occupancy is derived from whether
+/// an active rental exists, so stored state cannot contradict reality (§22).
+enum UnitAvailability {
+  AVAILABLE
+  MAINTENANCE
+  UNAVAILABLE
+
+  @@map("unit_availability")
+}
+
+enum RentalStatus {
+  DRAFT
+  ACTIVE
+  ENDED
+  CANCELLED
+
+  @@map("rental_status")
+}
+
+enum RentFrequency {
+  MONTHLY
+  YEARLY
+
+  @@map("rent_frequency")
+}
+
+enum MidPeriodEndPolicy {
+  PRORATE
+  FULL_PERIOD
+
+  @@map("mid_period_end_policy")
+}
+
+enum ChargeType {
+  RENT
+  ELECTRICITY
+  WATER
+  INTERNET
+  WASTE
+  CLEANING
+  OTHER
+
+  @@map("charge_type")
+}
+
+enum PricingModel {
+  FIXED
+  PER_UNIT
+
+  @@map("pricing_model")
+}
+
+/// OVERDUE is deliberately absent — it is derived from the due date and the
+/// balance at read time, so it can never go stale between job runs (§15).
+enum DevicePlatform {
+  ANDROID
+  IOS
+
+  @@map("device_platform")
+}
+
+enum NotificationType {
+  RENT_DUE_SOON
+  RENT_DUE_TODAY
+  RENT_OVERDUE
+  PAYMENT_RECORDED
+  RENTAL_STARTED
+  RENTAL_ENDED
+  GENERAL
+
+  @@map("notification_type")
+}
+
+enum DeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+
+  @@map("delivery_status")
+}
+
+enum JobRunStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+  SKIPPED
+
+  @@map("job_run_status")
+}
+
+/// Applies to FIXED charges only. Metered charges are computed from actual
+/// usage, so they carry no policy — enforced by a CHECK constraint.
+enum ChargeProrationPolicy {
+  PRORATE
+  FULL
+
+  @@map("charge_proration_policy")
+}
+
+enum SettlementStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  WAIVED
+
+  @@map("settlement_status")
+}
+
+enum PaymentPurpose {
+  RENT
+  SECURITY_DEPOSIT
+  DEPOSIT_REFUND
+
+  @@map("payment_purpose")
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  MOBILE_WALLET
+  CHEQUE
+  OTHER
+
+  @@map("payment_method")
+}
+
+enum PaymentStatus {
+  POSTED
+  REVERSED
+
+  @@map("payment_status")
+}
+
+// ---------------------------------------------------------------------------
+// Profile and preferences
+// ---------------------------------------------------------------------------
+
+/// Application-level profile, separate from the Better Auth `User` record.
+///
+/// Kept separate so the auth library owns its own table shape and an upgrade
+/// cannot collide with product fields.
+///
+/// Addresses use Nepal's administrative structure — province / district /
+/// municipality / ward — rather than a Western street-city-state-zip shape
+/// (CLAUDE.md §47).
+model Profile {
+  id     String @id @default(uuid(7))
+  userId String @unique @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  fullName String  @map("full_name")
+  /// Nepali mobile number, stored without formatting. Validated at the API edge.
+  phone    String? @unique
+  photoUrl String? @map("photo_url")
+
+  /// Drives navigation and onboarding only — never authorization (§31).
+  primaryRole UserRole @map("primary_role")
+
+  province     String?
+  district     String?
+  municipality String?
+  ward         Int?
+  /// Tole / street / house number.
+  addressLine  String? @map("address_line")
+  landmark     String?
+
+  discoverySource       DiscoverySource? @map("discovery_source")
+  onboardingCompletedAt DateTime?        @map("onboarding_completed_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([primaryRole])
+  @@map("profiles")
+}
+
+/// Stored server-side, not only on the device, because the notification job
+/// runs on the server and must know which language to write a reminder in.
+model UserPreferences {
+  id     String @id @default(uuid(7))
+  userId String @unique @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// 'en' | 'ne' — see SUPPORTED_LANGUAGES in packages/shared.
+  language String @default("en")
+  /// 'light' | 'dark' | 'system'
+  theme    String @default("system")
+  /// 'BS' | 'AD' — which calendar dates are displayed in. See SUPPORTED_DATE_FORMATS.
+  dateFormat String @default("BS") @map("date_format")
+
+  notificationsEnabled Boolean @default(true) @map("notifications_enabled")
+  /// Days before the due date on which to remind. 0 means "on the day".
+  rentReminderDays     Int[]   @default([7, 1, 0]) @map("rent_reminder_days")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("user_preferences")
+}
+
+// ---------------------------------------------------------------------------
+// Property and units
+// ---------------------------------------------------------------------------
+
+model Property {
+  id          String @id @default(uuid(7))
+  ownerUserId String @map("owner_user_id")
+  owner       User   @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  name String
+
+  province     String?
+  district     String?
+  municipality String?
+  ward         Int?
+  addressLine  String? @map("address_line")
+  landmark     String?
+
+  /// Soft delete. A property with financial history is never hard-deleted (§57).
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  units Unit[]
+
+  @@index([ownerUserId, archivedAt])
+  @@map("properties")
+}
+
+/// Anything that can be rented: a flat, a room, a shop, or a whole house.
+///
+/// `parentUnitId` allows a room to sit inside a flat. The column exists from
+/// day one because adding it later is a migration, but the V1 UI only exposes
+/// one level — nesting introduces a rule (a flat and its rooms cannot both be
+/// actively rented) that is not worth enforcing until the product needs it.
+model Unit {
+  id         String   @id @default(uuid(7))
+  propertyId String   @map("property_id")
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  parentUnitId String? @map("parent_unit_id")
+  parentUnit   Unit?   @relation("UnitHierarchy", fields: [parentUnitId], references: [id], onDelete: Restrict)
+  childUnits   Unit[]  @relation("UnitHierarchy")
+
+  /// Display name, e.g. "Flat A" or "Room 2".
+  label String
+  type  UnitType
+  floor String?
+
+  /// Owner-controlled state only. Occupancy is derived — see the enum comment.
+  availability UnitAvailability @default(AVAILABLE)
+
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  rentals Rental[]
+
+  @@index([propertyId, archivedAt])
+  @@index([parentUnitId])
+  @@map("units")
+}
+
+// ---------------------------------------------------------------------------
+// Rental agreement
+// ---------------------------------------------------------------------------
+
+/// The relationship between an owner, a renter, a place, and financial terms.
+///
+/// Both user references are nullable, which is what makes CLAUDE.md §58's three
+/// workflows possible without a schema change:
+///
+///   Owner-only   ownerUserId set, renterUserId null, renter named in
+///                counterpartyName/Phone.
+///   Renter-only  renterUserId set, ownerUserId null, unitId null, place
+///                described by placeLabel/placeAddress — the renter is never
+///                pushed through property-owner fields (§9).
+///   Linked       both ids set. A future feature; nothing here has to change.
+model Rental {
+  id String @id @default(uuid(7))
+
+  createdByUserId String @map("created_by_user_id")
+  createdBy       User   @relation("RentalCreator", fields: [createdByUserId], references: [id])
+
+  ownerUserId String? @map("owner_user_id")
+  owner       User?   @relation("RentalOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+
+  renterUserId String? @map("renter_user_id")
+  renter       User?   @relation("RentalRenter", fields: [renterUserId], references: [id], onDelete: SetNull)
+
+  /// Null for renter-recorded rentals, where no Unit record exists.
+  unitId String? @map("unit_id")
+  unit   Unit?   @relation(fields: [unitId], references: [id], onDelete: Restrict)
+
+  /// The other party, when they do not use the app.
+  counterpartyName  String? @map("counterparty_name")
+  counterpartyPhone String? @map("counterparty_phone")
+
+  /// Free-text place description for renter-recorded rentals.
+  placeLabel   String? @map("place_label")
+  placeAddress String? @map("place_address")
+
+  frequency RentFrequency
+
+  /// Period length in days, SNAPSHOT at creation from MONTHLY_PERIOD_DAYS /
+  /// YEARLY_PERIOD_DAYS.
+  ///
+  /// Stored per rental rather than derived at read time so that changing the
+  /// product-wide constant can never silently alter the billing schedule of an
+  /// existing agreement (CLAUDE.md §3.3 — store the values needed to reproduce
+  /// historical calculations).
+  periodDays Int @map("period_days")
+
+  /// Inclusive. Business dates in Nepal Standard Time, no time component (§46).
+  startDate DateTime  @map("start_date") @db.Date
+  /// Inclusive. Set when the rental ends.
+  endDate   DateTime? @map("end_date") @db.Date
+
+  /// Days after a period starts before rent is due. 0 = due on day one.
+  dueOffsetDays    Int @default(0) @map("due_offset_days")
+  /// Days after the due date before an unpaid period counts as overdue.
+  overdueAfterDays Int @default(5) @map("overdue_after_days")
+
+  /// What to do with the final period if the tenant leaves part-way through.
+  midPeriodEndPolicy MidPeriodEndPolicy @default(PRORATE) @map("mid_period_end_policy")
+
+  /// Agreed security deposit, in paisa. Tracked SEPARATELY from rent credit —
+  /// a deposit is refundable and must never be silently consumed by unpaid
+  /// rent. Actual movement is recorded with payments.
+  securityDepositPaisa BigInt? @map("security_deposit_paisa")
+
+  status        RentalStatus @default(DRAFT)
+  endedAt       DateTime?    @map("ended_at") @db.Timestamptz(6)
+  endedByUserId String?      @map("ended_by_user_id")
+  endedReason   String?      @map("ended_reason")
+
+  notes String?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  charges  RentalCharge[]
+  periods  RentalPeriod[]
+  payments Payment[]
+
+  @@index([ownerUserId, status])
+  @@index([renterUserId, status])
+  @@index([unitId, status])
+  @@map("rentals")
+}
+
+/// The CURRENT rent configuration for a rental.
+///
+/// This table is mutable — an owner can change the electricity rate. Historical
+/// correctness does not depend on it: each period snapshots the values that
+/// applied when it was generated (CLAUDE.md §14). Never compute a past period
+/// from these rows.
+model RentalCharge {
+  id       String @id @default(uuid(7))
+  rentalId String @map("rental_id")
+  rental   Rental @relation(fields: [rentalId], references: [id], onDelete: Cascade)
+
+  chargeType ChargeType @map("charge_type")
+  /// Required for OTHER, which is the only type that may repeat on a rental.
+  label      String?
+
+  pricingModel PricingModel @map("pricing_model")
+
+  /// Set when pricingModel is FIXED. Paisa.
+  amountPaisa      BigInt? @map("amount_paisa")
+  /// Set when pricingModel is PER_UNIT, e.g. paisa per electricity unit.
+  ratePaisaPerUnit BigInt? @map("rate_paisa_per_unit")
+
+  /// PRORATE or FULL for a FIXED charge; NULL for PER_UNIT.
+  prorationPolicy ChargeProrationPolicy? @map("proration_policy")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([rentalId, isActive])
+  @@map("rental_charges")
+}
+
+// ---------------------------------------------------------------------------
+// Accounting
+// ---------------------------------------------------------------------------
+
+/// One billing period of a rental (CLAUDE.md §14).
+///
+/// Boundaries are stored EXPLICITLY and inclusively rather than derived from
+/// the start date plus an assumed length, which is what prevents off-by-one
+/// errors and keeps a historical period correct even if the period-length rule
+/// ever changes.
+///
+/// `totalAmountPaisa` and `paidAmountPaisa` are maintained inside the same
+/// transaction as the charges and allocations that move them. They are a cache
+/// of derivable facts, kept because every list screen needs them; the
+/// underlying rows remain the source of truth.
+model RentalPeriod {
+  id       String @id @default(uuid(7))
+  rentalId String @map("rental_id")
+  rental   Rental @relation(fields: [rentalId], references: [id], onDelete: Cascade)
+
+  /// 1-based and dense. The idempotency key for period generation (§16).
+  sequenceNumber Int @map("sequence_number")
+
+  periodStart DateTime @map("period_start") @db.Date
+  periodEnd   DateTime @map("period_end") @db.Date
+  dueDate     DateTime @map("due_date") @db.Date
+
+  /// Days charged for, and the proration denominator. Equal for a full period.
+  coveredDays Int     @map("covered_days")
+  basisDays   Int     @map("basis_days")
+  isProrated  Boolean @default(false) @map("is_prorated")
+
+  totalAmountPaisa BigInt @default(0) @map("total_amount_paisa")
+  paidAmountPaisa  BigInt @default(0) @map("paid_amount_paisa")
+
+  /// False while a metered charge still awaits its reading. Blocks PAID (§60).
+  chargesComplete  Boolean          @default(true) @map("charges_complete")
+  settlementStatus SettlementStatus @default(UNPAID) @map("settlement_status")
+
+  generatedAt DateTime @default(now()) @map("generated_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  charges     PeriodCharge[]
+  allocations PaymentAllocation[]
+
+  @@unique([rentalId, sequenceNumber])
+  @@unique([rentalId, periodStart])
+  /// Drives the reminder and overdue jobs: unsettled periods by due date.
+  @@index([settlementStatus, dueDate])
+  @@index([rentalId, sequenceNumber])
+  @@map("rental_periods")
+}
+
+/// A charge as it applied to ONE period — a snapshot, never recomputed.
+///
+/// This is what keeps January's electricity priced at January's rate after the
+/// rate changes (§3.3, §14). Meter readings are stored alongside the amount so
+/// the tenant can see how it was derived rather than being handed a total to
+/// trust (§60, §61).
+model PeriodCharge {
+  id       String       @id @default(uuid(7))
+  periodId String       @map("period_id")
+  period   RentalPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+
+  chargeType   ChargeType   @map("charge_type")
+  label        String?
+  pricingModel PricingModel @map("pricing_model")
+
+  amountPaisa      BigInt  @default(0) @map("amount_paisa")
+  ratePaisaPerUnit BigInt? @map("rate_paisa_per_unit")
+
+  /// The policy that produced this amount. Snapshotted so a later change to
+  /// the configuration cannot obscure how a past period was priced.
+  prorationPolicy ChargeProrationPolicy? @map("proration_policy")
+
+  previousReading Int? @map("previous_reading")
+  currentReading  Int? @map("current_reading")
+  consumedUnits   Int? @map("consumed_units")
+
+  isFinalized Boolean   @default(true) @map("is_finalized")
+  finalizedAt DateTime? @map("finalized_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([periodId])
+  @@map("period_charges")
+}
+
+/// An immutable financial event (§15, §55).
+///
+/// Never edited. A correction is a new row with `reversesPaymentId` set and the
+/// original marked REVERSED, so the history of what was believed and when is
+/// preserved.
+///
+/// Recorded by either party — both the landlord and the tenant may enter a
+/// payment.
+model Payment {
+  id       String @id @default(uuid(7))
+  rentalId String @map("rental_id")
+  rental   Rental @relation(fields: [rentalId], references: [id], onDelete: Cascade)
+
+  recordedByUserId String @map("recorded_by_user_id")
+
+  /// RENT is allocated to periods. A SECURITY_DEPOSIT never is — it is
+  /// refundable and must not settle arrears.
+  purpose PaymentPurpose
+
+  amountPaisa BigInt        @map("amount_paisa")
+  paidOn      DateTime      @map("paid_on") @db.Date
+  method      PaymentMethod
+  /// Bank reference, wallet transaction id, cheque number.
+  reference   String?
+  note        String?
+
+  status PaymentStatus @default(POSTED)
+
+  reversesPaymentId String?   @map("reverses_payment_id")
+  reversedAt        DateTime? @map("reversed_at") @db.Timestamptz(6)
+
+  /// Client-generated. Makes a retried submission return the original payment
+  /// instead of creating a second one (§37).
+  idempotencyKey String @map("idempotency_key")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  allocations PaymentAllocation[]
+
+  @@unique([recordedByUserId, idempotencyKey])
+  @@index([rentalId, paidOn])
+  @@index([rentalId, purpose, status])
+  @@map("payments")
+}
+
+// ---------------------------------------------------------------------------
+// Notifications and devices
+// ---------------------------------------------------------------------------
+
+/// A registered push target (CLAUDE.md §20).
+///
+/// Modelled per device rather than as a single token on the user, because one
+/// person routinely has a phone and a tablet, and tokens rotate. Revoking is a
+/// soft flag so a token FCM has rejected is not simply forgotten.
+model Device {
+  id     String @id @default(uuid(7))
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// The FCM registration token. Unique across all users: a handset that is
+  /// handed to someone else must not keep delivering the old owner's rent
+  /// reminders.
+  token      String         @unique
+  platform   DevicePlatform
+  appVersion String?        @map("app_version")
+
+  /// Whether the OS-level permission is currently granted.
+  notificationsEnabled Boolean @default(true) @map("notifications_enabled")
+
+  lastSeenAt DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  /// Set when the user signs out, or when FCM reports the token as invalid.
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  deliveries NotificationDelivery[]
+
+  @@index([userId, revokedAt])
+  @@map("devices")
+}
+
+/// A notification, stored in PostgreSQL (§17).
+///
+/// The database — not FCM — is the record. Push is only a delivery attempt, so
+/// a user who had notifications disabled, or whose phone was off, still sees
+/// the history in the app.
+model Notification {
+  id     String @id @default(uuid(7))
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type  NotificationType
+  title String
+  body  String
+
+  /// Stable navigation identifiers for the deep link — never UI routes (§39).
+  data Json
+
+  /// Prevents the same notification being created twice however many times the
+  /// scheduler runs (§18). Shape: `TYPE:entityId:targetDate`.
+  dedupeKey String @unique @map("dedupe_key")
+
+  rentalId String? @map("rental_id")
+  periodId String? @map("period_id")
+
+  readAt    DateTime? @map("read_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  deliveries NotificationDelivery[]
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+  @@map("notifications")
+}
+
+/// One attempt to push one notification to one device.
+///
+/// Separate from Notification so retrying a failed push does NOT add a second
+/// entry to the user's in-app list (§18).
+model NotificationDelivery {
+  id String @id @default(uuid(7))
+
+  notificationId String       @map("notification_id")
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  deviceId String @map("device_id")
+  device   Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  status    DeliveryStatus @default(PENDING)
+  attempts  Int            @default(0)
+  messageId String?        @map("message_id")
+  lastError String?        @map("last_error")
+  sentAt    DateTime?      @map("sent_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([notificationId, deviceId])
+  @@index([status, createdAt])
+  @@map("notification_deliveries")
+}
+
+/// A record of one scheduled job execution (§19).
+///
+/// `runKey` makes a run idempotent per logical window — a daily job carries the
+/// business date, so triggering it five times in one day performs the work once
+/// and reports the rest as skipped.
+model JobRun {
+  id      String @id @default(uuid(7))
+  jobName String @map("job_name")
+  runKey  String @map("run_key")
+
+  status         JobRunStatus @default(RUNNING)
+  itemsProcessed Int          @default(0) @map("items_processed")
+  error          String?
+
+  startedAt  DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
+
+  @@unique([jobName, runKey])
+  @@index([jobName, startedAt])
+  @@map("job_runs")
+}
+
+/// Which rupees of which payment settled which period.
+///
+/// Explicit rather than implied, so "why does January still show a balance?"
+/// always has an inspectable answer.
+model PaymentAllocation {
+  id String @id @default(uuid(7))
+
+  paymentId String  @map("payment_id")
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  periodId String       @map("period_id")
+  period   RentalPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+
+  amountPaisa BigInt @map("amount_paisa")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([paymentId, periodId])
+  @@index([periodId])
+  @@map("payment_allocations")
+}

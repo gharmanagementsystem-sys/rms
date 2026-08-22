@@ -1,0 +1,57 @@
+{
+  "greetingMorning": "शुभ प्रभात, {{name}}",
+  "greetingAfternoon": "नमस्कार, {{name}}",
+  "greetingEvening": "शुभ साँझ, {{name}}",
+  "owner": {
+    "title": "तपाईंका सम्पत्ति",
+    "properties": "सम्पत्ति",
+    "occupied": "भरिएको",
+    "available": "खाली",
+    "activeRentals": "चालु भाडा",
+    "collected": "३० दिनमा उठेको",
+    "overdueTitle": "उठाउन बाँकी",
+    "dueSoonTitle": "चाँडै तिर्नुपर्ने",
+    "emptyTitle": "कुनै सम्पत्ति छैन",
+    "emptyBody": "भाडा र सेवा शुल्क हेर्न पहिलो सम्पत्ति थप्नुहोस्।",
+    "addProperty": "सम्पत्ति थप्नुहोस्",
+    "yourRentals": "तपाईंका भाडाहरू",
+    "manageProperties": "सम्पत्ति व्यवस्थापन",
+    "manageRentals": "भाडा व्यवस्थापन"
+  },
+  "renter": {
+    "title": "तपाईंको भाडा",
+    "outstanding": "तिर्न बाँकी",
+    "credit": "अग्रिम तिरेको",
+    "deposit": "धरौटी",
+    "nextDue": "अर्को भुक्तानी",
+    "settledTitle": "तपाईं अद्यावधिक हुनुहुन्छ",
+    "settledBody": "अहिले तिर्न बाँकी छैन।",
+    "includes": "भाडामा के-के समावेश छ",
+    "recentPayments": "हालका भुक्तानी",
+    "noPayments": "कुनै भुक्तानी दर्ता भएको छैन।",
+    "emptyTitle": "भाडा दर्ता छैन",
+    "emptyBody": "तिर्न बाँकी र तिरिसकेको हेर्न आफ्नो भाडा थप्नुहोस्।",
+    "addRental": "मेरो भाडा थप्नुहोस्",
+    "payRent": "भाडा तिर्नुहोस्",
+    "viewAllRentals": "सबै भाडा हेर्नुहोस्"
+  },
+  "row": {
+    "dueOn": "{{date}} मा तिर्नुपर्ने",
+    "daysLate_one": "{{count}} दिन ढिलो",
+    "daysLate_other": "{{count}} दिन ढिलो",
+    "dueInDays_one": "{{count}} दिनमा तिर्नुपर्ने",
+    "dueInDays_other": "{{count}} दिनमा तिर्नुपर्ने",
+    "dueToday": "आज तिर्नुपर्ने",
+    "awaitingReading": "मिटर रिडिङ आवश्यक"
+  },
+  "charge": {
+    "RENT": "भाडा",
+    "ELECTRICITY": "बिजुली",
+    "WATER": "पानी",
+    "INTERNET": "इन्टरनेट",
+    "WASTE": "फोहोर संकलन",
+    "CLEANING": "सरसफाइ",
+    "OTHER": "अन्य",
+    "perUnit": "प्रति युनिट"
+  }
+}

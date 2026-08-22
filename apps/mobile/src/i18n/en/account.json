@@ -1,0 +1,50 @@
+{
+  "title": "Account",
+  "roleOwner": "House owner",
+  "roleRenter": "Renter",
+  "signOut": "Sign out",
+  "editProfile": "Edit profile",
+  "security": "Security",
+  "fields": {
+    "email": "Email",
+    "emailLocked": "Your account is verified against this address, so it cannot be changed here.",
+    "fullName": "Full name",
+    "phone": "Mobile number",
+    "phoneHint": "Used for rent reminders and to identify you to the other party.",
+    "role": "I mainly use this app as",
+    "roleHint": "Changes what you see. It does not change who can access your records.",
+    "district": "District",
+    "municipality": "Municipality",
+    "ward": "Ward",
+    "addressLine": "Street or tole"
+  },
+  "preferences": {
+    "syncedNote": "Saved to your account, so it follows you to any device.",
+    "offline": "We couldn't reach the server, so this preference was not saved. Your previous setting has been restored.",
+    "failed": "We couldn't save this preference. Your previous setting has been restored."
+  },
+  "notifications": {
+    "title": "Rent reminders",
+    "hint": "Reminders before a period is due, and alerts when rent is overdue.",
+    "osNote": "Your phone's own notification setting also has to allow them.",
+    "testAction": "Send test notification",
+    "testSent": "Sent — check your notification tray.",
+    "testNoDevice": "This device isn't registered for push yet. Check that notifications are allowed for this app, then try again.",
+    "testFailed": "The notification was created but couldn't be delivered to this device.",
+    "testError": "Couldn't send a test notification right now. Please try again."
+  },
+  "otherDevices": {
+    "action": "Sign out other devices",
+    "confirmTitle": "Sign out everywhere else?",
+    "confirmBody": "Other phones and tablets signed in to this account will be signed out. This device stays signed in.",
+    "done": "Signed out of {{count}} other session(s).",
+    "failed": "We couldn't sign out the other devices. Please try again."
+  },
+  "validation": {
+    "nameRequired": "Enter your name.",
+    "fixHighlighted": "Please check the highlighted fields."
+  },
+  "errors": {
+    "saveFailed": "We couldn't save your profile. Please try again."
+  }
+}

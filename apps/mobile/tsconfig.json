@@ -1,0 +1,30 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    // Mirrors tsconfig.base.json's strictness. Not extended from it directly
+    // because Expo's base supplies the React Native lib/jsx configuration.
+    "strict": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noUncheckedIndexedAccess": true,
+    // Explicit, because Expo's react-native resolution condition stops TS
+    // auto-including @types. "node" is needed by the workspace's Node-executed
+    // files (metro/tailwind/app.config.js) and by the i18n test, which reads
+    // source files from disk.
+    "types": ["node", "react"],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts",
+    "nativewind-env.d.ts",
+    "types/**/*.d.ts"
+  ],
+  "exclude": ["node_modules"]
+}

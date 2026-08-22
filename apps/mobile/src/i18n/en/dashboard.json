@@ -1,0 +1,57 @@
+{
+  "greetingMorning": "Good morning, {{name}}",
+  "greetingAfternoon": "Good afternoon, {{name}}",
+  "greetingEvening": "Good evening, {{name}}",
+  "owner": {
+    "title": "Your properties",
+    "properties": "Properties",
+    "occupied": "Occupied",
+    "available": "Available",
+    "activeRentals": "Active rentals",
+    "collected": "Collected in 30 days",
+    "overdueTitle": "Needs chasing",
+    "dueSoonTitle": "Due soon",
+    "emptyTitle": "No properties yet",
+    "emptyBody": "Add your first property to start tracking rent and service charges.",
+    "addProperty": "Add property",
+    "yourRentals": "Your rentals",
+    "manageProperties": "Manage properties",
+    "manageRentals": "Manage rentals"
+  },
+  "renter": {
+    "title": "Your rental",
+    "outstanding": "You owe",
+    "credit": "Paid ahead",
+    "deposit": "Deposit held",
+    "nextDue": "Next payment",
+    "settledTitle": "You are up to date",
+    "settledBody": "Nothing is owed right now.",
+    "includes": "What the rent covers",
+    "recentPayments": "Recent payments",
+    "noPayments": "No payments recorded yet.",
+    "emptyTitle": "No rental recorded",
+    "emptyBody": "Add your rental to track what you owe and what you have paid.",
+    "addRental": "Add my rental",
+    "payRent": "Pay rent",
+    "viewAllRentals": "View all rentals"
+  },
+  "row": {
+    "dueOn": "Due {{date}}",
+    "daysLate_one": "{{count}} day late",
+    "daysLate_other": "{{count}} days late",
+    "dueInDays_one": "Due in {{count}} day",
+    "dueInDays_other": "Due in {{count}} days",
+    "dueToday": "Due today",
+    "awaitingReading": "Meter reading needed"
+  },
+  "charge": {
+    "RENT": "Rent",
+    "ELECTRICITY": "Electricity",
+    "WATER": "Water",
+    "INTERNET": "Internet",
+    "WASTE": "Waste collection",
+    "CLEANING": "Cleaning",
+    "OTHER": "Other",
+    "perUnit": "per unit"
+  }
+}

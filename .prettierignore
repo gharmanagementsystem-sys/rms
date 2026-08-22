@@ -1,0 +1,8 @@
+node_modules/
+dist/
+build/
+.expo/
+package-lock.json
+apps/mobile/expo-env.d.ts
+apps/api/generated/
+apps/api/prisma/migrations/

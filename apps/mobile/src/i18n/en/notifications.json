@@ -1,0 +1,22 @@
+{
+  "title": "Notifications",
+  "unread": "Unread",
+  "unreadCount": "{{count}} unread",
+  "markAllRead": "Mark all as read",
+  "opensRental": "Opens the rental",
+  "emptyTitle": "Nothing yet",
+  "emptyBody": "Rent reminders and payment confirmations will appear here, even if your phone was off when they were sent.",
+  "type": {
+    "RENT_DUE_SOON": "Rent due soon",
+    "RENT_DUE_TODAY": "Rent due today",
+    "RENT_OVERDUE": "Overdue",
+    "PAYMENT_RECORDED": "Payment recorded",
+    "RENTAL_STARTED": "Rental started",
+    "RENTAL_ENDED": "Rental ended",
+    "GENERAL": "Notice"
+  },
+  "errors": {
+    "markFailed": "We couldn't mark that as read. Please try again.",
+    "markAllFailed": "We couldn't mark these as read. Please try again."
+  }
+}

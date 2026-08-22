@@ -1,0 +1,48 @@
+{
+  "progress": "Step {{current}} of {{total}}",
+  "back": "Back",
+  "next": "Continue",
+  "finish": "Finish setup",
+  "role": {
+    "title": "How will you use the app?",
+    "subtitle": "You can change this later, and you can do both.",
+    "owner": "I rent out property",
+    "ownerHint": "Track tenants, rent and payments across your rooms or flats.",
+    "renter": "I pay rent",
+    "renterHint": "Track your own rent, what you owe and what you have paid."
+  },
+  "profile": {
+    "title": "About you",
+    "subtitle": "Only your name is required.",
+    "district": "District",
+    "districtPlaceholder": "Kathmandu",
+    "municipality": "Municipality",
+    "phoneHint": "Used for your records. We will not share it.",
+    "phone": "Mobile number"
+  },
+  "preferences": {
+    "title": "Preferences",
+    "subtitle": "You can change these any time.",
+    "notifications": "Rent reminders",
+    "notificationsHint": "Get told before rent is due and if a payment is late.",
+    "discovery": "How did you hear about us?",
+    "skip": "Prefer not to say",
+    "discoveryOptional": "Optional — it helps us know where to focus."
+  },
+  "discovery": {
+    "FRIEND_OR_FAMILY": "Friend or family",
+    "SOCIAL_MEDIA": "Social media",
+    "SEARCH_ENGINE": "Search engine",
+    "APP_STORE": "App store",
+    "ADVERTISEMENT": "Advertisement",
+    "OTHER": "Somewhere else"
+  },
+  "errors": {
+    "saveFailed": "Could not save your details. Please try again.",
+    "phoneTaken": "That phone number is already registered to another account."
+  },
+  "language": {
+    "title": "Choose your language",
+    "subtitle": "Everything after this will be shown in the language you pick."
+  }
+}

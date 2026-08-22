@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * Semantic design tokens (CLAUDE.md §26).
+ *
+ * Dark mode is a deliberate palette, not an inversion. Values are raw RGB
+ * channels so Tailwind's `<alpha-value>` slot works (e.g. `bg-primary/10`).
+ *
+ * Components reference token names only. If you find yourself writing a hex
+ * value in a component, the token is missing — add it here instead.
+ */
+@layer base {
+  :root {
+    --color-background: 250 248 245; /* warm off-white, never pure white */
+    --color-surface: 255 255 255;
+    --color-surface-elevated: 245 242 238;
+    --color-text-primary: 26 31 29;
+    --color-text-secondary: 92 98 95;
+    --color-border: 227 222 215;
+    --color-primary: 20 82 74; /* deep evergreen */
+    --color-accent: 184 134 59; /* brass — the Nepali note */
+    --color-success: 47 125 93;
+    --color-warning: 183 121 31;
+    --color-danger: 169 50 38;
+  }
+
+  .dark:root {
+    --color-background: 18 20 19;
+    --color-surface: 26 29 27;
+    --color-surface-elevated: 35 39 36;
+    --color-text-primary: 240 238 233;
+    --color-text-secondary: 168 173 169;
+    --color-border: 46 51 47;
+    --color-primary: 62 140 126;
+    --color-accent: 212 165 92;
+    --color-success: 79 163 125;
+    --color-warning: 217 164 65;
+    --color-danger: 217 105 92;
+  }
+}

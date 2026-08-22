@@ -1,0 +1,60 @@
+{
+  "title": "Properties",
+  "add": "Add a property",
+  "newTitle": "New property",
+  "newSubtitle": "Only a name is needed. You can add the rest later.",
+  "units": "Units",
+  "addUnit": "Add a unit",
+  "unitSummary": "{{occupied}} of {{total}} occupied",
+  "unitOccupiedNote": "A tenant is currently in this unit, so its state is set by the rental. End the rental to change it.",
+  "emptyTitle": "No properties yet",
+  "emptyBody": "Add your first property to start tracking rent and service charges.",
+  "noUnitsTitle": "No units yet",
+  "noUnitsBody": "Add the rooms or flats you rent out, then create a rental for each tenant.",
+  "edit": {
+    "title": "Edit property"
+  },
+  "archive": {
+    "action": "Archive property",
+    "explain": "The property is hidden from your list. Its rentals, periods and payments are all kept.",
+    "confirmTitle": "Archive this property?",
+    "confirmBody": "It will be hidden from your list. Nothing is deleted — past rentals and payments stay available.",
+    "archivedTitle": "This property is archived",
+    "archivedBody": "It no longer appears in your list. Its history is unchanged."
+  },
+  "archiveUnit": {
+    "action": "Archive unit",
+    "confirmTitle": "Archive this unit?",
+    "confirmBody": "It will be hidden from this property. Past rentals and payments stay available."
+  },
+  "fields": {
+    "name": "Property name",
+    "namePlaceholder": "Baluwatar Apartments",
+    "district": "District",
+    "districtPlaceholder": "Kathmandu",
+    "municipality": "Municipality",
+    "ward": "Ward",
+    "addressLine": "Street or tole",
+    "addressPlaceholder": "Baluwatar Marg 12",
+    "unitLabel": "Unit name",
+    "unitLabelPlaceholder": "Room 1",
+    "unitType": "Type",
+    "availability": "Availability"
+  },
+  "unitType": { "FLAT": "Flat", "ROOM": "Room", "SHOP": "Shop", "HOUSE": "House" },
+  "occupancy": { "occupied": "Occupied", "available": "Available", "unavailable": "Unavailable" },
+  "availability": {
+    "AVAILABLE": "Available",
+    "MAINTENANCE": "Under maintenance",
+    "UNAVAILABLE": "Not available"
+  },
+  "validation": {
+    "nameRequired": "Give the property a name",
+    "unitLabelRequired": "Give the unit a name",
+    "fixHighlighted": "Please check the highlighted fields."
+  },
+  "errors": {
+    "saveFailed": "Could not save. Please try again.",
+    "archiveFailed": "We couldn't archive this. Please try again."
+  }
+}

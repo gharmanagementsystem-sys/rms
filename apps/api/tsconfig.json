@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // tsc only typechecks here; tsup produces the build output, so rootDir
+    // would only conflict with the config files included below.
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts", "tsup.config.ts", "vitest.config.ts"]
+}

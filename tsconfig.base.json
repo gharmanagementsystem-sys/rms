@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+
+    // CLAUDE.md §51 — strict TypeScript.
+    "strict": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    // Financial code indexes arrays and record lookups constantly; this turns a
+    // whole class of silent `undefined` bugs into compile errors.
+    "noUncheckedIndexedAccess": true,
+
+    "noEmit": true
+  },
+  "exclude": ["node_modules", "dist", "build"]
+}

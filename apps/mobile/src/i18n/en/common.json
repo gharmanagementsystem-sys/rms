@@ -1,0 +1,53 @@
+{
+  "appName": "Rent Management Nepal",
+  "tabs": {
+    "home": "Home",
+    "properties": "Properties",
+    "rentals": "Rentals",
+    "myRental": "My rental",
+    "account": "Account",
+    "notifications": "Notifications"
+  },
+  "actions": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "retry": "Try again",
+    "close": "Close",
+    "back": "Back",
+    "change": "Change"
+  },
+  "date": {
+    "day": "Day",
+    "month": "Month",
+    "year": "Year",
+    "today": "Today",
+    "adEquivalent": "{{date}} AD",
+    "invalidForMonth": "That day does not exist in this month."
+  },
+  "states": {
+    "loading": "Loading…",
+    "errorTitle": "Something went wrong",
+    "errorBody": "Please check your connection and try again.",
+    "crashBody": "The app ran into an unexpected problem. Your saved records are safe.",
+    "offlineBanner": "Showing saved data"
+  },
+  "settings": {
+    "language": "Language",
+    "theme": "Appearance",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "themeSystem": "Match device",
+    "dateFormat": "Date format",
+    "dateFormatBs": "Bikram Sambat",
+    "dateFormatAd": "Gregorian (AD)",
+    "dateFormatHint": "Choose which calendar dates are shown in. This only changes how dates look — nothing is recalculated."
+  },
+  "status": {
+    "paid": "Paid",
+    "partiallyPaid": "Partially paid",
+    "pending": "Pending",
+    "overdue": "Overdue",
+    "waived": "Waived",
+    "awaitingReading": "Meter reading needed"
+  }
+}

@@ -1,0 +1,195 @@
+# Render Blueprint — Rent Management Nepal API
+#
+# Deploy with: Render Dashboard → New → Blueprint → connect this repo.
+# Render reads this file and creates every service below in one step.
+#
+# WHAT THIS CREATES
+#   1. rms-api            — the Express API (web service)
+#   2. four Cron Jobs     — the scheduled accounting/notification work
+#
+# The database is NOT defined here: this project uses Neon (see CLAUDE.md §4),
+# not Render Postgres, so `DATABASE_URL` is supplied as a secret rather than
+# provisioned by Render.
+#
+# ⚠️ PLAN REQUIREMENTS
+#   • Cron Jobs are a PAID Render feature and do not exist on the free tier.
+#   • `preDeployCommand` (which runs migrations) also requires a paid instance.
+#     On the free tier, remove it and run `npm run db:deploy -w @rms/api`
+#     locally against the production DATABASE_URL before each deploy instead.
+#   • The free tier also spins the service down after ~15 minutes idle, so the
+#     first request after a pause pays a cold start. `src/db/client.ts` already
+#     tunes its pool timeouts for exactly this, but reminders firing against a
+#     sleeping instance is why the schedulers below are separate services.
+
+services:
+  - type: web
+    name: rms-api
+    runtime: node
+    plan: starter
+    # Closest region to Nepal; every other option adds material latency.
+    region: singapore
+    branch: main
+
+    # Installs the root + API workspace only. The mobile workspace pulls in
+    # react-native and the Expo toolchain (hundreds of MB) which the server
+    # has no use for. If this ever fails on a lockfile mismatch, fall back to
+    # a plain `npm ci` — correct, just slower.
+    buildCommand: npm ci --workspace @rms/api --include-workspace-root && npm run build --workspace @rms/api
+    startCommand: npm run start --workspace @rms/api
+
+    # Applies migrations after a successful build but BEFORE traffic switches
+    # over, so a release never serves requests against an un-migrated schema.
+    # `prisma generate` needs no database and already runs on postinstall.
+    preDeployCommand: npm run db:deploy --workspace @rms/api
+
+    # Returns 200 without touching the database, so a brief Neon blip does not
+    # make Render kill a healthy instance. /api/v1/health/ready is the deeper
+    # check that does verify the database.
+    healthCheckPath: /api/v1/health
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # package.json requires >=20.19.0. Pinned so a Render default bump
+      # cannot change the runtime under a release without warning.
+      - key: NODE_VERSION
+        value: 20.19.0
+
+      # ---- Secrets: set these in the Render dashboard -------------------
+      # `sync: false` means "prompt me, never store in git".
+
+      # Neon pooled connection string. Use the POOLED host (`-pooler`), not
+      # the direct one — the direct endpoint exhausts connections quickly.
+      - key: DATABASE_URL
+        sync: false
+
+      # Must be the service's own public https URL, e.g.
+      #   https://rms-api.onrender.com
+      # Better Auth builds OAuth callbacks from it, and boot REFUSES a non-https
+      # value in production. Chicken-and-egg: Render only assigns the URL on
+      # first deploy, so the first build fails on this. Set it, then redeploy.
+      - key: BETTER_AUTH_URL
+        sync: false
+
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+
+      # Mail transport. EITHER these two, OR the four SMTP_* variables —
+      # production boot fails with neither, because email verification and
+      # password reset depend on it.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+
+      # Firebase service-account JSON, base64-encoded (multi-line JSON does
+      # not survive an env var intact):
+      #   base64 -w0 service-account.json
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false
+
+      # ---- Generated ----------------------------------------------------
+      # Render generates these once and keeps them stable across deploys.
+      # Nobody needs to know the values: the cron services below read them
+      # back via `fromService`.
+      #
+      # Verify after first deploy that these meet the minimum lengths the
+      # schema enforces (32 and 24 characters); regenerate if not.
+      - key: BETTER_AUTH_SECRET
+        generateValue: true
+      - key: JOB_RUNNER_TOKEN
+        generateValue: true
+
+      # ---- Optional -----------------------------------------------------
+      # Left at their defaults deliberately:
+      #   PORT                        Render injects it
+      #   DATABASE_SSL=true           Neon requires TLS
+      #   DATABASE_POOL_MAX=10        small on purpose; Neon's pooler scales
+      #   ENABLE_IN_PROCESS_SCHEDULER=false  the cron services below do this
+      #
+      # CORS_ORIGINS stays empty: native mobile clients are not subject to
+      # CORS, so allowing no browser origin is the safe production posture.
+      - key: LOG_LEVEL
+        value: info
+
+# ---------------------------------------------------------------------------
+# Scheduled jobs
+#
+# ⚠️ SCHEDULES ARE UTC. Render cron does not accept a timezone, and Nepal is
+# UTC+05:45 — a 45-minute offset, so these are NOT whole-hour conversions.
+# docs/jobs.md states the intended local (NPT) times; each entry below shows
+# the arithmetic. Getting this wrong sends rent reminders in the afternoon.
+#
+# Every job is independently idempotent (docs/jobs.md), so a retry, an overlap
+# or a double fire cannot double-bill or double-notify.
+# ---------------------------------------------------------------------------
+crons:
+  # 00:15 NPT − 5:45 → 18:30 UTC the previous day
+  - name: rms-generate-periods
+    runtime: node
+    plan: starter
+    region: singapore
+    branch: main
+    schedule: '30 18 * * *'
+    buildCommand: echo "no build needed — this job only makes an HTTP request"
+    startCommand: >-
+      curl -fsS --retry 3 --retry-delay 10 -X POST
+      -H "Authorization: Bearer $JOB_RUNNER_TOKEN"
+      "https://$API_HOST/api/internal/jobs/generate-periods"
+    envVars: &jobEnv
+      - key: JOB_RUNNER_TOKEN
+        fromService:
+          type: web
+          name: rms-api
+          envVarKey: JOB_RUNNER_TOKEN
+      - key: API_HOST
+        fromService:
+          type: web
+          name: rms-api
+          property: host
+
+  # 08:00 NPT − 5:45 → 02:15 UTC. Deliberately not midnight: a push at 3 a.m.
+  # is how an app gets uninstalled.
+  - name: rms-rent-reminders
+    runtime: node
+    plan: starter
+    region: singapore
+    branch: main
+    schedule: '15 2 * * *'
+    buildCommand: echo "no build needed — this job only makes an HTTP request"
+    startCommand: >-
+      curl -fsS --retry 3 --retry-delay 10 -X POST
+      -H "Authorization: Bearer $JOB_RUNNER_TOKEN"
+      "https://$API_HOST/api/internal/jobs/rent-reminders"
+    envVars: *jobEnv
+
+  # Every 5 minutes — timezone-independent. Drains the push queue.
+  - name: rms-dispatch-push
+    runtime: node
+    plan: starter
+    region: singapore
+    branch: main
+    schedule: '*/5 * * * *'
+    buildCommand: echo "no build needed — this job only makes an HTTP request"
+    startCommand: >-
+      curl -fsS --retry 3 --retry-delay 10 -X POST
+      -H "Authorization: Bearer $JOB_RUNNER_TOKEN"
+      "https://$API_HOST/api/internal/jobs/dispatch-push"
+    envVars: *jobEnv
+
+  # Sunday 03:00 NPT − 5:45 → Saturday 21:15 UTC. Note the day shifts too:
+  # weekday 0 (Sunday) becomes 6 (Saturday).
+  - name: rms-prune-devices
+    runtime: node
+    plan: starter
+    region: singapore
+    branch: main
+    schedule: '15 21 * * 6'
+    buildCommand: echo "no build needed — this job only makes an HTTP request"
+    startCommand: >-
+      curl -fsS --retry 3 --retry-delay 10 -X POST
+      -H "Authorization: Bearer $JOB_RUNNER_TOKEN"
+      "https://$API_HOST/api/internal/jobs/prune-devices"
+    envVars: *jobEnv
