@@ -1,0 +1,125 @@
+# Scheduled accounting and notification jobs, triggered from GitHub Actions.
+#
+# WHY THIS EXISTS
+# Render's Cron Job service is a paid feature. This runs the same four jobs on
+# GitHub's free scheduler instead, by making the same authenticated HTTP call
+# that `render.yaml` describes — the API is unchanged and unaware of who called
+# it. See docs/jobs.md for what each job does and why re-running is safe.
+#
+# SETUP (Settings → Secrets and variables → Actions)
+#   Secret   JOB_RUNNER_TOKEN   same value as the API's env var
+#   Variable API_BASE_URL       e.g. https://rms-api.onrender.com  (no trailing /)
+#
+# ⚠️ SCHEDULES ARE UTC — GitHub, like Render, has no timezone setting. Nepal is
+# UTC+05:45, a 45-minute offset, so these are not whole-hour conversions and two
+# of them shift the day as well. docs/jobs.md has the full table.
+#
+# ⚠️ GITHUB DELAYS SCHEDULED RUNS. Under load a cron can fire 5-15 minutes late,
+# and GitHub explicitly does not guarantee timing. That is fine for these jobs:
+# every one is idempotent and keyed to a business date, not to the minute it
+# runs (docs/jobs.md). It is NOT fine for anything needing punctual delivery.
+#
+# ⚠️ BILLING. Each run bills a minimum of one minute. On a PRIVATE repo the free
+# allowance is 2000 minutes/month, so the three low-frequency jobs below cost
+# ~65 minutes/month — negligible. Running `dispatch-push` every 5 minutes would
+# cost ~8600 minutes/month and blow the quota, which is why it is not scheduled
+# here. Public repos have no such limit.
+
+name: Scheduled jobs
+
+on:
+  schedule:
+    # 00:15 NPT → 18:30 UTC previous day — generate-periods
+    - cron: '30 18 * * *'
+    # 08:00 NPT → 02:15 UTC — rent-reminders, then push them straight out
+    - cron: '15 2 * * *'
+    # Sunday 03:00 NPT → Saturday 21:15 UTC — prune-devices
+    - cron: '15 21 * * 6'
+  # Lets you run any job by hand from the Actions tab — useful for the first
+  # smoke test and for re-running a job after an incident.
+  workflow_dispatch:
+    inputs:
+      job:
+        description: 'Job to run'
+        required: true
+        type: choice
+        options:
+          - generate-periods
+          - rent-reminders
+          - dispatch-push
+          - prune-devices
+
+jobs:
+  run-job:
+    runs-on: ubuntu-latest
+    # Generous because a free-tier host may be asleep; see the wake step.
+    timeout-minutes: 10
+
+    steps:
+      - name: Decide which jobs this run should trigger
+        id: plan
+        env:
+          SCHEDULE: ${{ github.event.schedule }}
+          MANUAL: ${{ inputs.job }}
+        run: |
+          set -euo pipefail
+          if [ -n "${MANUAL:-}" ]; then
+            JOBS="$MANUAL"
+          else
+            case "$SCHEDULE" in
+              '30 18 * * *') JOBS="generate-periods" ;;
+              # Dispatch immediately after creating the reminders so the daily
+              # batch goes out at once rather than waiting for a sweep.
+              '15 2 * * *')  JOBS="rent-reminders dispatch-push" ;;
+              '15 21 * * 6') JOBS="prune-devices" ;;
+              *) echo "::error::Unrecognised schedule: $SCHEDULE"; exit 1 ;;
+            esac
+          fi
+          echo "jobs=$JOBS" >> "$GITHUB_OUTPUT"
+          echo "Will run: $JOBS"
+
+      - name: Wake the API
+        env:
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${API_BASE_URL:-}" ]; then
+            echo "::error::API_BASE_URL repository variable is not set"; exit 1
+          fi
+          # A free-tier instance sleeps when idle and can take ~a minute to come
+          # back. Hitting the liveness route first means the job request itself
+          # does not have to absorb that cold start. This route deliberately
+          # does not touch the database, so it is the cheapest way to wake it.
+          curl -fsS --retry 10 --retry-all-errors --retry-delay 10 \
+               --max-time 120 "$API_BASE_URL/api/v1/health" > /dev/null
+          echo "API is awake."
+
+      - name: Trigger job(s)
+        env:
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
+          JOB_RUNNER_TOKEN: ${{ secrets.JOB_RUNNER_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${JOB_RUNNER_TOKEN:-}" ]; then
+            echo "::error::JOB_RUNNER_TOKEN secret is not set"; exit 1
+          fi
+
+          for job in ${{ steps.plan.outputs.jobs }}; do
+            echo "--- $job ---"
+            # -w writes the status after the body so a failure is diagnosable
+            # in the log. --retry covers a transient 5xx; the endpoint is
+            # idempotent, so a retry cannot double-bill or double-notify.
+            http_code=$(curl -sS -X POST \
+              -H "Authorization: Bearer $JOB_RUNNER_TOKEN" \
+              --retry 3 --retry-delay 15 --retry-all-errors \
+              --max-time 300 \
+              -o /tmp/response.json -w '%{http_code}' \
+              "$API_BASE_URL/api/internal/jobs/$job")
+
+            cat /tmp/response.json; echo
+            if [ "$http_code" != "200" ]; then
+              echo "::error::$job returned HTTP $http_code"
+              exit 1
+            fi
+            echo "$job completed."
+          done
