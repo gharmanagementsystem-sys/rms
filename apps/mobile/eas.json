@@ -17,14 +17,16 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "http://10.180.47.89:4000",
-        "EXPO_ALLOW_CLEARTEXT": "true"
+        "EXPO_PUBLIC_API_URL": "https://rms-d0ag.onrender.com"
       }
     },
     "production": {
       "autoIncrement": true,
       "android": {
         "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://rms-d0ag.onrender.com"
       }
     }
   },

@@ -10,6 +10,7 @@ import { notFoundHandler } from './middleware/not-found';
 import { rateLimit } from './middleware/rate-limit';
 import { attachAuthIfPresent } from './middleware/require-auth';
 import { requestLogger } from './middleware/request-logger';
+import { legalRouter } from './modules/legal/legal.routes';
 import { internalRouter } from './modules/internal/internal.routes';
 import { apiV1Router } from './routes/index';
 
@@ -105,6 +106,9 @@ export function createApp(): Express {
     // the right one.
     app.use('/api/internal', rateLimit({ name: 'internal', windowMs: 60_000, max: 30 }));
   }
+
+  // Public store-policy pages (no authentication).
+  app.use(legalRouter);
 
   app.use('/api/v1', apiV1Router);
   // Bearer-token authenticated, for Render's Cron Job service.

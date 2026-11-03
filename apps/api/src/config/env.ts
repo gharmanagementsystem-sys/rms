@@ -112,6 +112,12 @@ const EnvSchema = z.object({
   APP_NAME: z.string().min(1).default('Rent Management Nepal'),
 
   /**
+   * A monitored inbox shown on the public delete-account page, which app-store
+   * policy requires. Without it the page tells users to use the store listing.
+   */
+  SUPPORT_EMAIL: z.string().email().optional(),
+
+  /**
    * Outbound email over SMTP — the fallback transport.
    *
    * Some mail transport is required in production, because email verification
@@ -264,8 +270,33 @@ export interface Env extends RawEnv {
   readonly isEmailEnabled: boolean;
 }
 
+/**
+ * A copy of process.env with surrounding whitespace stripped from every value.
+ *
+ * Pasting a secret into a hosting dashboard's text field very easily carries a
+ * trailing newline or space, and the result is a value that looks identical on
+ * screen but is one character too long. That failure is brutal to diagnose:
+ * a `GOOGLE_CLIENT_ID` with a trailing "\n" reaches Google as
+ * `...googleusercontent.com%0A`, matches no client, and comes back only as
+ * `Error 401: invalid_client` with nothing pointing at whitespace.
+ *
+ * Leading and trailing whitespace is never meaningful in any variable this
+ * schema reads — not in a URL, a key, a token, or a From address — so trimming
+ * is safe and turns a silent misconfiguration into a non-event.
+ *
+ * `process.env` itself is NOT mutated: this returns a copy, so nothing outside
+ * this module observes a different environment than the one it was given.
+ */
+function trimmedProcessEnv(): NodeJS.ProcessEnv {
+  const trimmed: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    trimmed[key] = typeof value === 'string' ? value.trim() : value;
+  }
+  return trimmed;
+}
+
 function loadEnv(): Env {
-  const parsed = EnvSchemaWithProductionRules.safeParse(process.env);
+  const parsed = EnvSchemaWithProductionRules.safeParse(trimmedProcessEnv());
 
   if (!parsed.success) {
     // Deliberately console.error rather than the logger: the logger is

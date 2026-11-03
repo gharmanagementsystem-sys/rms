@@ -19,6 +19,7 @@
     "db:studio": "prisma studio",
     "db:seed": "tsx src/db/seed.ts",
     "db:unseed": "tsx src/db/seed.ts --clean",
+    "db:review-account": "tsx src/db/review-account.ts",
     "postinstall": "prisma generate",
     "test:security": "node scripts/security-e2e.mjs",
     "verify:fcm": "tsx scripts/verify-fcm.ts",

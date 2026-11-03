@@ -2,7 +2,7 @@
   "expo": {
     "name": "Rent Management Nepal",
     "slug": "rms",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "rms",
@@ -14,6 +14,7 @@
     },
     "android": {
       "package": "np.com.rms.app",
+      "versionCode": 2,
       "adaptiveIcon": {
         "backgroundColor": "#FAF8F5",
         "foregroundImage": "./assets/android-icon-foreground.png",
